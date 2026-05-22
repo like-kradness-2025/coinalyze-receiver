@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coinalyze-receiver"
+version = "0.1.0"
+description = "Coinalyze-only market data collector for pseudo footprint analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "like-kradness-2025" }]
+dependencies = []
+
+[project.scripts]
+coinalyze-receiver = "coinalyze_receiver.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
