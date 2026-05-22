@@ -1,0 +1,23 @@
+{
+  "symbol": "BTCUSDT_PERP.A",
+  "lookback": "6h",
+  "output_dir": "data",
+  "runtime_dir": "runtime",
+  "coinalyze": {
+    "api_key_env": "COINALYZE_API_KEY",
+    "base_url": "https://api.coinalyze.net/v1",
+    "request_timeout_sec": 30,
+    "rate_limit_sleep_sec": 1.6
+  },
+  "fetch": {
+    "ohlcv_interval": "1min",
+    "position_interval": "1min",
+    "enabled_datasets": [
+      "ohlcv",
+      "open_interest",
+      "liquidation",
+      "funding_rate",
+      "long_short_ratio"
+    ]
+  }
+}
