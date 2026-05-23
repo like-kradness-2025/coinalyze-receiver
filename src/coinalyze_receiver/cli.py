@@ -77,10 +77,13 @@ def cmd_render(args: argparse.Namespace) -> int:
             rows.append(json.loads(line))
     
     # 2. Pseudo Footprint への変換
+    # CLI引数から bucket size を取得 (デフォルト 1.0)
+    tick_size = float(args.price_bucket_usd) if hasattr(args, "price_bucket_usd") else 1.0
+    
     footprint = build_pseudo_footprint(
         rows, 
         interval_min=15, 
-        tick_size=1.0
+        tick_size=tick_size
     )
     
     # 3. レンダリング
@@ -90,7 +93,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         output_png, 
         symbol=cfg.symbol
     )
-    print(f"Chart saved to {output_png}")
+    print(f"Chart saved to {output_png} (bucket: {tick_size})")
     return 0
 
 
@@ -139,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_loop)
 
     p = sub.add_parser("render", help="Draw CVD heatmap from normalized OHLCV data")
+    p.add_argument("--price-bucket-usd", type=float, default=10.0, help="Price bucket size for footprint")
     p.set_defaults(func=cmd_render)
 
     p = sub.add_parser("notify", help="Send PNG chart to Discord")
