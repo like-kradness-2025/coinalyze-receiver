@@ -78,7 +78,6 @@ def cmd_render(args: argparse.Namespace) -> int:
             if line.strip():
                 rows.append(json.loads(line))
     
-    # Pseudo Footprint への変換
     footprint = build_pseudo_footprint(
         rows, 
         interval_min=args.interval_min, 
@@ -87,9 +86,11 @@ def cmd_render(args: argparse.Namespace) -> int:
     
     output_png = cfg.output_dir / "cvd_heatmap.png"
     render_cvd_heatmap(
-        footprint, 
-        output_png, 
+        footprint,
+        output_png,
         symbol=cfg.symbol,
+        from_ts=args.from_ts,
+        to_ts=args.to_ts,
     )
     print(f"Chart saved to {output_png} (bucket: {args.price_bucket_usd})")
     return 0
@@ -142,6 +143,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("render", help="Draw CVD heatmap from normalized OHLCV data")
     p.add_argument("--interval-min", type=int, default=15)
     p.add_argument("--price-bucket-usd", type=float, default=DEFAULT_PRICE_BUCKET_USD)
+    p.add_argument("--from-ts", type=str, default=None)
+    p.add_argument("--to-ts", type=str, default=None)
     p.set_defaults(func=cmd_render)
 
     p = sub.add_parser("notify", help="Send PNG chart to Discord")

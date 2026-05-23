@@ -68,8 +68,15 @@ def build_pseudo_footprint(
     # {interval_ts: {price_bucket: {buy, sell}}}
     agg: dict[int, dict[float, dict[str, float]]] = {}
 
+    seen_keys: set[tuple[str, str, int]] = set()
     for row in sorted(ohlcv_rows, key=lambda x: int(x["ts"])):
+        dataset = str(row.get("dataset", "ohlcv"))
+        symbol = str(row.get("symbol", ""))
         ts = int(row["ts"])
+        dedupe_key = (dataset, symbol, ts)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
         low = float(row.get("low", row.get("l", 0.0)) or 0.0)
         high = float(row.get("high", row.get("h", low)) or low)
         buy_volume = float(row.get("buy_volume", row.get("bv", 0.0)) or 0.0)

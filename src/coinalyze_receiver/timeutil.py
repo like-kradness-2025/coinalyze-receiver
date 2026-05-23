@@ -9,6 +9,8 @@ def utc_now_ts() -> int:
 
 def parse_duration_seconds(value: str) -> int:
     text = value.strip().lower()
+    if text.endswith("min"):
+        return int(float(text[:-3]) * 60)
     if text.endswith("m"):
         return int(float(text[:-1]) * 60)
     if text.endswith("h"):
@@ -16,7 +18,6 @@ def parse_duration_seconds(value: str) -> int:
     if text.endswith("d"):
         return int(float(text[:-1]) * 86400)
     return int(float(text))
-
 
 def iso_from_ts(ts: int | float) -> str:
     return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()

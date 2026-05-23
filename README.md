@@ -15,6 +15,7 @@ Coinalyze API 専用の軽量 Receiver / Collector です。
 - Funding Rate history を取得する
 - Long/Short Ratio history を取得する
 - raw JSONL と normalized JSONL を保存する
+- raw JSONL は履歴として追記保存し、`_saved_at` による保存時刻ベースのローテーションで 7日超の行を削除する
 - `run-once` / `loop` で実行する
 
 描画・Discord送信・疑似Footprint変換は次フェーズです。
