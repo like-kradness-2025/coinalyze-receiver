@@ -1,49 +1,183 @@
-# v1.00 Release Report: Coinalyze Receiver Stabilization & Visualization
+# v1.00 Release Report: Coinalyze Receiver
 
 ## 1. 概要
-Coinalyze API専用Receiverの安定化および、1分足OHLCVデータから15分足CVDヒートマップを生成・通知するパイプラインを実装しました。
 
-## 2. 実装済み機能
-### 2.1 Data Collection (Stability)
-- **実API連携**: `COINALYZE_API_KEY` を用いた認証およびデータ取得。
-- **Dataset**: OHLCV, Open Interest, Liquidation, Funding Rate, Long/Short Ratio の5種をサポート。
-- **保存形式**: Raw JSONL および Normalized JSONL による保存。
-- **ヘルスチェック**: `runtime/health.json` による取得成功/失敗の記録。
+`v1.00` は Coinalyze API 専用 Receiver / Collector の安定化ブランチです。
 
-### 2.2 Transformation (Pseudo Footprint)
-- **15m Resampling**: 1分足データを15分足に集計。
-- **Pseudo Footprint**: 15分足のDelta値を価格レンジに線形分配し、価格レベルごとのCVDを擬似的に構築。
+主目的は、Coinalyze API から取得したデータを raw / normalized JSONL として保存し、後段の pseudo footprint / renderer が利用できる形へ整えることです。
 
-### 2.3 Visualization (Hybrid 98p Scale)
-- **Hybrid Scale**: 全データCVD値の98パーセンタイルを算出し、カラーマップ上限に固定。外れ値による色の飽和を防止。
-- **Heatmap**: `matplotlib` を使用し、X軸(時間) x Y軸(価格) のCVDヒートマップをPNG出力。
+このブランチでは `ivarurdalen/coinalyze` SDK を採用し、自前 HTTP client を廃止しました。
 
-### 2.4 Notification
-- **Discord Webhook**: 生成したPNGをDiscordへ自動送信。
+---
 
-## 3. 検証結果 (Smoke Test)
-### 3.1 API取得テスト
-- Symbol: `BTCUSDT_PERP.A`
-- 取得結果: 全データセットにおいて正常に取得・保存を確認。
+## 2. 実装済み
 
-### 3.2 ユニットテスト
-```
-============================= test session starts ==============================
-platform linux -- Python 3.11.15, pytest-9.0.3, pluggy-1.6.0 -- /home/weed420/coinalyze-receiver/.venv/bin/python
-cachedir: .pytest_cache
-rootdir: /home/weed420/coinalyze-receiver
-configfile: pyproject.toml
-collecting ... collected 1 item
+### 2.1 Data Collection
 
-tests/test_normalize.py::test_normalize_ohlcv_delta_fields PASSED        [100%]
+- `COINALYZE_API_KEY` を環境変数から読む
+- `ivarurdalen/coinalyze` SDK 経由で API 接続
+- Future markets 確認
+- OHLCV history 取得
+- Open Interest history 取得
+- Liquidation history 取得
+- Funding Rate history 取得
+- Long/Short Ratio history 取得
+- raw JSONL 保存
+- normalized JSONL 保存
+- `runtime/health.json` 出力
 
-============================== 1 passed in 0.00s ===============================
+### 2.2 CLI
+
+実装済みコマンド:
+
+```bash
+python -m coinalyze_receiver.cli markets --query BTCUSDT
+python -m coinalyze_receiver.cli run-once --symbol BTCUSDT_PERP.A --lookback 6h
+python -m coinalyze_receiver.cli loop --symbol BTCUSDT_PERP.A --lookback 6h --every 15m
+python -m coinalyze_receiver.cli render --price-bucket-usd 10
+python -m coinalyze_receiver.cli notify
 ```
 
-### 3.3 成果物確認
-- `data/cvd_heatmap.png` の正常生成およびDiscordへの送信を確認済み。
+### 2.3 Pseudo Footprint Transform
 
-## 4. 運用コマンド
-- 取得: `python -m coinalyze_receiver.cli run-once --symbol BTCUSDT_PERP.A --lookback 6h`
-- 描画: `python -m coinalyze_receiver.cli render`
-- 通知: `python -m coinalyze_receiver.cli notify`
+当初仕様に合わせて、以下の方式に修正済みです。
+
+```text
+1分足ごとに high-low の価格bucketへ buy/sell を均等配分
+→ 15分足へ合算
+→ price bucketごとの buy / sell / cvd を生成
+```
+
+デフォルト価格bucket:
+
+```text
+10 USD
+```
+
+### 2.4 Dependencies
+
+`pyproject.toml` に以下を追加済みです。
+
+```toml
+coinalyze @ git+https://github.com/ivarurdalen/coinalyze.git
+matplotlib>=3.8
+numpy>=1.24
+requests>=2.31
+```
+
+外部SDK都合により Python は `>=3.11` です。
+
+---
+
+## 3. 重要な注意
+
+### 3.1 True Footprintではない
+
+このプロジェクトの出力は true tick-level footprint ではありません。
+
+正しい呼称:
+
+```text
+Coinalyze OHLCV-based pseudo footprint
+Pseudo Footprint
+CVD heatmap proxy
+```
+
+誤った呼称:
+
+```text
+True footprint
+Real bid/ask footprint
+Orderbook heatmap
+```
+
+### 3.2 ReceiverとRendererは分離する
+
+Receiverの責務:
+
+```text
+取得
+正規化
+保存
+health出力
+```
+
+Rendererの責務:
+
+```text
+pseudo footprint変換
+heatmap生成
+Discord通知
+```
+
+現状は同一パッケージ内に含めていますが、判断ロジックや売買ロジックは入れません。
+
+---
+
+## 4. 検証状況
+
+### 確認済み
+
+- `pyproject.toml` 依存関係を整備
+- SDK import方針確認
+- pseudo footprint変換ロジックを当初仕様へ修正
+- transform test 追加
+
+### 要ローカル確認
+
+この環境からは実APIキーを使った実行確認はできないため、以下はローカル/Termux側で確認してください。
+
+```bash
+pip install -e .
+pytest
+export COINALYZE_API_KEY="..."
+python -m coinalyze_receiver.cli markets --query BTCUSDT
+python -m coinalyze_receiver.cli run-once --symbol BTCUSDT_PERP.A --lookback 6h
+python -m coinalyze_receiver.cli render --price-bucket-usd 10
+```
+
+確認対象:
+
+```text
+data/raw/*.jsonl
+data/normalized/*.jsonl
+runtime/health.json
+data/cvd_heatmap.png
+```
+
+---
+
+## 5. 残課題
+
+- 実APIキーでのスモークテスト
+- `BTCUSDT_PERP.A` が最適symbolかの確認
+- Coinalyze実レスポンスと normalizer の完全照合
+- rendererを横棒 pseudo footprint レイアウトへ発展
+- Discord送信の実環境確認
+- READMEの最終整備
+
+---
+
+## 6. v1.00 Done Definition
+
+`v1.00` は以下を満たしたら完了です。
+
+- `pip install -e .` が通る
+- `pytest` が通る
+- `markets` が通る
+- `run-once` が raw / normalized JSONL を保存する
+- `runtime/health.json` が出る
+- `render --price-bucket-usd 10` がPNGを生成する
+- APIキーやWebhook URLをログ・ファイルへ保存しない
+
+---
+
+## 7. 次フェーズ
+
+`v1.10` 以降:
+
+- 15分ローソク + 横棒 pseudo footprint renderer
+- hybrid 98p overflow marker
+- OI / liquidation / funding / L/S 補助パネル
+- Discord定期配信
+- Termux常駐運用

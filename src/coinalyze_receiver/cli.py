@@ -15,6 +15,8 @@ from .renderer import render_cvd_heatmap
 from .notifier import send_discord_notification
 
 
+DEFAULT_PRICE_BUCKET_USD = 10.0
+
 
 def _print_results(results) -> None:
     for r in results:
@@ -64,7 +66,6 @@ def cmd_loop(args: argparse.Namespace) -> int:
 
 def cmd_render(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
-    # 1. データの読み込み (normalized/ohlcv.jsonl)
     ohlcv_path = cfg.output_dir / "normalized" / "ohlcv.jsonl"
     if not ohlcv_path.exists():
         print(f"Data not found: {ohlcv_path}")
@@ -74,26 +75,23 @@ def cmd_render(args: argparse.Namespace) -> int:
     rows = []
     with ohlcv_path.open("r", encoding="utf-8") as f:
         for line in f:
-            rows.append(json.loads(line))
+            if line.strip():
+                rows.append(json.loads(line))
     
-    # 2. Pseudo Footprint への変換
-    # CLI引数から bucket size を取得 (デフォルト 1.0)
-    tick_size = float(args.price_bucket_usd) if hasattr(args, "price_bucket_usd") else 1.0
-    
+    # Pseudo Footprint への変換
     footprint = build_pseudo_footprint(
         rows, 
-        interval_min=15, 
-        tick_size=tick_size
+        interval_min=args.interval_min, 
+        tick_size=args.price_bucket_usd
     )
     
-    # 3. レンダリング
     output_png = cfg.output_dir / "cvd_heatmap.png"
     render_cvd_heatmap(
         footprint, 
         output_png, 
-        symbol=cfg.symbol
+        symbol=cfg.symbol,
     )
-    print(f"Chart saved to {output_png} (bucket: {tick_size})")
+    print(f"Chart saved to {output_png} (bucket: {args.price_bucket_usd})")
     return 0
 
 
@@ -113,8 +111,8 @@ def cmd_notify(args: argparse.Namespace) -> int:
     
     success = send_discord_notification(
         webhook_url, 
-        f"Coinalyze CVD Heatmap for {cfg.symbol}", 
-        image_path
+        f"Coinalyze CVD Heatmap for {cfg.symbol}",
+        image_path,
     )
     
     print("Notification sent successfully" if success else "Notification failed")
@@ -142,7 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_loop)
 
     p = sub.add_parser("render", help="Draw CVD heatmap from normalized OHLCV data")
-    p.add_argument("--price-bucket-usd", type=float, default=10.0, help="Price bucket size for footprint")
+    p.add_argument("--interval-min", type=int, default=15)
+    p.add_argument("--price-bucket-usd", type=float, default=DEFAULT_PRICE_BUCKET_USD)
     p.set_defaults(func=cmd_render)
 
     p = sub.add_parser("notify", help="Send PNG chart to Discord")
