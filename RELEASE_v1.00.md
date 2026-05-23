@@ -169,6 +169,7 @@ data/cvd_heatmap.png
 - `runtime/health.json` が出る
 - `render --price-bucket-usd 10` がPNGを生成する
 - APIキーやWebhook URLをログ・ファイルへ保存しない
+- 再現性確認として、クリーンな仮想環境で `pip install .` を実行し、依存固定と通常インストールの挙動を確認する
 
 ---
 

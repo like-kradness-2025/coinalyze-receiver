@@ -21,10 +21,26 @@ Coinalyze API 専用の軽量 Receiver / Collector です。
 
 ## Setup
 
+### 前提条件
+
+- Python 3.11 以上
+
+### 開発用導入（editable install）
+
+ローカル開発では `pip install -e .` を使います。これはソースツリーを直接参照するため、コード変更をすぐ反映できますが、厳密な再現性を確認する用途では `pip install .` を使ってください。
+
 ```bash
+# 1. 仮想環境の作成
 python -m venv .venv
-source .venv/bin/activate
+
+# 2. 仮想環境の有効化
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate   # Windows
+
+# 3. 開発用インストール
 pip install -e .
+
+# 4. 環境変数設定ファイルのコピー
 cp .env.example .env
 ```
 
@@ -33,6 +49,40 @@ cp .env.example .env
 ```bash
 export COINALYZE_API_KEY="your_api_key_here"
 ```
+
+### 再現性のある導入手順
+
+完全に固定された依存関係で再現性を重視する場合は、ビルド環境も含めて `pyproject.toml` の固定値に従う必要があります。
+
+固定されている主なバージョン:
+
+| パッケージ | バージョン |
+|-----------|----------|
+| matplotlib | 3.10.9 |
+| numpy | 2.4.6 |
+| requests | 2.34.2 |
+| coinalyze | 0.1.1 |
+| pyrate-limiter | 3.9.0 |
+| setuptools | 79.0.1 |
+
+再現性を重視する場合は、クリーンな仮想環境で通常インストールを行い、ビルド時の `setuptools` も固定値を使ってください。
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install .
+```
+
+すべての依存パッケージの完全なリストは `pyproject.toml` を確認してください。
+
+### バージョンの確認
+
+インストール後に以下のコマンドでインストールされたバージョンを確認できます。
+
+```bash
+pip list
+```
+
 
 ## Usage
 
