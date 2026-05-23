@@ -9,7 +9,11 @@ description = "Coinalyze-only market data collector for pseudo footprint analysi
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "like-kradness-2025" }]
-dependencies = []
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=1.24",
+    "requests>=2.31",
+]
 
 [project.scripts]
 coinalyze-receiver = "coinalyze_receiver.cli:main"
