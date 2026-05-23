@@ -4,7 +4,6 @@ import argparse
 import sys
 import time
 from typing import Sequence
-from pathlib import Path
 
 from .api import CoinalyzeClient
 from .config import load_config
@@ -14,6 +13,8 @@ from .transform import build_pseudo_footprint
 from .renderer import render_cvd_heatmap
 from .notifier import send_discord_notification
 
+
+DEFAULT_PRICE_BUCKET_USD = 10.0
 
 
 def _print_results(results) -> None:
@@ -64,31 +65,29 @@ def cmd_loop(args: argparse.Namespace) -> int:
 
 def cmd_render(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
-    # 1. データの読み込み (normalized/ohlcv.jsonl)
     ohlcv_path = cfg.output_dir / "normalized" / "ohlcv.jsonl"
     if not ohlcv_path.exists():
         print(f"Data not found: {ohlcv_path}")
         return 1
-    
+
     import json
     rows = []
     with ohlcv_path.open("r", encoding="utf-8") as f:
         for line in f:
-            rows.append(json.loads(line))
-    
-    # 2. Pseudo Footprint への変換
+            if line.strip():
+                rows.append(json.loads(line))
+
     footprint = build_pseudo_footprint(
-        rows, 
-        interval_min=15, 
-        tick_size=1.0
+        rows,
+        interval_min=args.interval_min,
+        tick_size=args.price_bucket_usd,
     )
-    
-    # 3. レンダリング
+
     output_png = cfg.output_dir / "cvd_heatmap.png"
     render_cvd_heatmap(
-        footprint, 
-        output_png, 
-        symbol=cfg.symbol
+        footprint,
+        output_png,
+        symbol=cfg.symbol,
     )
     print(f"Chart saved to {output_png}")
     return 0
@@ -98,22 +97,22 @@ def cmd_notify(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     import os
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
-    
+
     if not webhook_url:
         print("DISCORD_WEBHOOK_URL is not set in environment.")
         return 1
-    
+
     image_path = cfg.output_dir / "cvd_heatmap.png"
     if not image_path.exists():
         print(f"Chart image not found: {image_path}")
         return 1
-    
+
     success = send_discord_notification(
-        webhook_url, 
-        f"Coinalyze CVD Heatmap for {cfg.symbol}", 
-        image_path
+        webhook_url,
+        f"Coinalyze CVD Heatmap for {cfg.symbol}",
+        image_path,
     )
-    
+
     print("Notification sent successfully" if success else "Notification failed")
     return 0 if success else 1
 
@@ -139,11 +138,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_loop)
 
     p = sub.add_parser("render", help="Draw CVD heatmap from normalized OHLCV data")
+    p.add_argument("--interval-min", type=int, default=15)
+    p.add_argument("--price-bucket-usd", type=float, default=DEFAULT_PRICE_BUCKET_USD)
     p.set_defaults(func=cmd_render)
 
     p = sub.add_parser("notify", help="Send PNG chart to Discord")
     p.set_defaults(func=cmd_notify)
-    
+
     return parser
 
 
