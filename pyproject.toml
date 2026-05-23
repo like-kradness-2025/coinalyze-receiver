@@ -7,9 +7,10 @@ name = "coinalyze-receiver"
 version = "0.1.0"
 description = "Coinalyze-only market data collector for pseudo footprint analysis"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "like-kradness-2025" }]
 dependencies = [
+    "coinalyze @ git+https://github.com/ivarurdalen/coinalyze.git",
     "matplotlib>=3.8",
     "numpy>=1.24",
     "requests>=2.31",
