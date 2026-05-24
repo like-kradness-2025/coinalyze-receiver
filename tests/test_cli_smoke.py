@@ -62,6 +62,7 @@ def test_smoke_render(monkeypatch: pytest.MonkeyPatch, smoke_config, sample_ohlc
     _write_ohlcv_jsonl(ohlcv_path, sample_ohlcv_rows)
 
     monkeypatch.setattr(cli, "load_config", lambda _path: smoke_config)
+    monkeypatch.setattr(cli.time, "time", lambda: 1_700_001_800)
 
     assert cli.main(["render", "--price-bucket-usd", "10"]) == 0
     assert (smoke_config.output_dir / "cvd_heatmap.png").exists()
@@ -101,6 +102,7 @@ def test_smoke_full_pipeline(monkeypatch: pytest.MonkeyPatch, smoke_config, samp
 
     monkeypatch.setattr(cli, "load_config", lambda _path: smoke_config)
     monkeypatch.setattr(cli, "CoinalyzeReceiver", FakeReceiver)
+    monkeypatch.setattr(cli.time, "time", lambda: 1_700_001_800)
 
     assert cli.main(["run-once", "--symbol", "BTCUSDT_PERP.A", "--lookback", "1h"]) == 0
     assert cli.main(["render", "--price-bucket-usd", "10"]) == 0

@@ -8,7 +8,7 @@ from typing import Any
 from .api import CoinalyzeClient
 from .config import ReceiverConfig
 from .normalize import normalize_generic_history, normalize_ohlcv
-from .storage import append_jsonl, read_jsonl, rotate_raw_jsonl, upsert_jsonl, write_json
+from .storage import read_jsonl, rotate_raw_jsonl, upsert_jsonl, write_json
 from .timeutil import iso_from_ts, parse_duration_seconds, utc_now_ts
 
 
@@ -61,9 +61,9 @@ class CoinalyzeReceiver:
         datasets_state = state.get("datasets", {}) if isinstance(state, dict) else {}
         dataset_state = datasets_state.get(dataset, {}) if isinstance(datasets_state, dict) else {}
         last_ts = dataset_state.get("last_ts")
-        overlap = self._interval_overlap_seconds()
+        interval = self._interval_overlap_seconds()
         if isinstance(last_ts, int):
-            from_ts = max(lookback_from, last_ts - overlap)
+            from_ts = max(lookback_from, last_ts + interval)
         else:
             from_ts = lookback_from
         meta = {
@@ -78,20 +78,25 @@ class CoinalyzeReceiver:
 
     def _save(self, dataset: str, raw_payload: Any, normalized_rows: list[dict[str, Any]], meta: dict[str, Any], saved_at: int) -> FetchResult:
         raw_path, normalized_path = self._paths(dataset)
-        append_jsonl(
+        upsert_jsonl(
             raw_path,
             {
                 "dataset": dataset,
-                "meta": meta,
+                "symbol": meta["symbol"],
+                "from": meta["from"],
                 "to": meta["to"],
+                "meta": meta,
                 "payload": raw_payload,
                 "_saved_at": saved_at,
             },
+            ("dataset", "symbol", "from", "to"),
         )
         raw_count = 1
+        before_count = len(read_jsonl(normalized_path)) if normalized_path.exists() else 0
         for row in normalized_rows:
             upsert_jsonl(normalized_path, row, ("dataset", "symbol", "ts"))
-        normalized_count = len(read_jsonl(normalized_path)) if normalized_path.exists() else len(normalized_rows)
+        final_count = len(read_jsonl(normalized_path)) if normalized_path.exists() else before_count
+        normalized_count = before_count + len(normalized_rows)
         return FetchResult(dataset=dataset, raw_count=raw_count, normalized_count=normalized_count, ok=True)
 
     def fetch_once(self, symbol: str | None = None, lookback: str | None = None, from_ts: int | None = None, to_ts: int | None = None) -> list[FetchResult]:
@@ -101,6 +106,7 @@ class CoinalyzeReceiver:
         now_ts = utc_now_ts()
         results: list[FetchResult] = []
         next_state = dict(state)
+        health_results: list[FetchResult] = []
 
         jobs = [
             ("ohlcv", lambda start, end: self.client.ohlcv_history(symbol, self.config.ohlcv_interval, start, end), normalize_ohlcv),
@@ -130,19 +136,25 @@ class CoinalyzeReceiver:
                     }
                 raw = fetcher(ds_from_ts, ds_to_ts)
                 rows = normalizer(raw)
-                results.append(self._save(dataset, raw, rows, meta, now_ts))
+                result = self._save(dataset, raw, rows, meta, now_ts)
+                results.append(result)
+                normalized_path = self._paths(dataset)[1]
+                persisted_count = len(read_jsonl(normalized_path)) if normalized_path.exists() else 0
+                health_results.append(FetchResult(dataset=dataset, raw_count=result.raw_count, normalized_count=persisted_count, ok=result.ok, error=result.error))
                 max_ts = max((int(row["ts"]) for row in rows if "ts" in row), default=None)
                 if max_ts is not None:
                     datasets_state = dict(next_state.get("datasets", {}))
                     datasets_state[dataset] = {"last_ts": max_ts, "updated_at": now_ts}
                     next_state["datasets"] = datasets_state
             except Exception as exc:
-                results.append(FetchResult(dataset=dataset, raw_count=0, normalized_count=0, ok=False, error=str(exc)))
+                error_result = FetchResult(dataset=dataset, raw_count=0, normalized_count=0, ok=False, error=str(exc))
+                results.append(error_result)
+                health_results.append(error_result)
 
         next_state["symbol"] = symbol
         next_state["updated_at"] = now_ts
         self._write_state(next_state)
-        self.write_health(results, symbol=symbol, from_ts=0 if from_ts is None else from_ts, to_ts=now_ts if to_ts is None else to_ts, ts=now_ts)
+        self.write_health(health_results, symbol=symbol, from_ts=0 if from_ts is None else from_ts, to_ts=now_ts if to_ts is None else to_ts, ts=now_ts)
         rotate_raw_jsonl(self.config.output_dir / "raw", days=7)
         return results
 
