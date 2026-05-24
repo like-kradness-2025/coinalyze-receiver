@@ -1,0 +1,15 @@
+[project]
+name = "coinalyze-receiver"
+version = "0.1.0"
+description = "Coinalyze API data receiver — fetch and store market data locally"
+requires-python = ">=3.11"
+dependencies = [
+    "coinalyze>=0.1.1",
+    "pandas>=2.0",
+]
+
+[project.scripts]
+coinalyze-receiver = "coinalyze_receiver.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
