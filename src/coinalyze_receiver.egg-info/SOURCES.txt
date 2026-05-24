@@ -4,6 +4,7 @@ src/coinalyze_receiver/__init__.py
 src/coinalyze_receiver/cli.py
 src/coinalyze_receiver/config.py
 src/coinalyze_receiver/receiver.py
+src/coinalyze_receiver/selected20.py
 src/coinalyze_receiver/storage.py
 src/coinalyze_receiver.egg-info/PKG-INFO
 src/coinalyze_receiver.egg-info/SOURCES.txt

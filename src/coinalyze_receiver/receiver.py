@@ -6,10 +6,8 @@ from typing import Optional
 
 from coinalyze import CoinalyzeClient, HistoryEndpoint, Interval
 
-import pandas as pd
-
 from .config import Config
-from .storage import Storage, ENDPOINT_TABLE_MAP
+from .storage import Storage, ENDPOINT_TABLE_MAP, normalize_timestamps
 
 logger = logging.getLogger(__name__)
 
@@ -104,18 +102,7 @@ class Receiver:
             return 0
 
         # Convert timestamp column to UNIX int
-        ts_dtype = str(df["timestamp"].dtype)
-        if "datetime64" in ts_dtype:
-            # Extract unit: datetime64[s] → seconds, datetime64[ns] → nanoseconds
-            unit = ts_dtype.replace("datetime64[", "").rstrip("]")
-            if unit == "s":
-                df["timestamp"] = df["timestamp"].astype("int64")
-            elif unit == "ns":
-                df["timestamp"] = df["timestamp"].astype("int64") // 10**9
-            else:
-                df["timestamp"] = df["timestamp"].astype("int64") // 10**9
-        elif df["timestamp"].dtype == "object":
-            df["timestamp"] = pd.to_datetime(df["timestamp"]).astype("int64") // 10**9
+        df = normalize_timestamps(df)
 
         rows = self.storage.upsert_dataframe(table, df)
         logger.info(

@@ -37,4 +37,18 @@ coinalyze-receiver --list-markets
 
 # 検索
 coinalyze-receiver --search BTC
+
+# BTC Selected 20 の 1分足OHLCV を取得（20銘柄すべて対象）
+coinalyze-receiver selected20
+
+# 取得対象の20銘柄を確認
+coinalyze-receiver selected20 --show
 ```
+
+### selected20 サブコマンド
+
+`selected20` は BTC Selected 20 のスポット/パーペチュアル両方を対象に、`ohlcv_bars` テーブルへ 1分足OHLCV を保存します。
+- 初回同期: 指定した `--days`（既定 1 日）分を取得
+- 差分同期: 既存データの最終 `timestamp + 1分` から再取得
+- レート制限: 2秒間隔で API を呼び出し、40 calls/min の制約に対して余裕を持って実行
+- DB: `--db` で保存先を指定可能（省略時は `./data/coinalyze_1min.db`）

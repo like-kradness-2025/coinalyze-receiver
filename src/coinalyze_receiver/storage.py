@@ -7,6 +7,22 @@ from typing import Optional
 import pandas as pd
 
 
+def normalize_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert timestamp column to UNIX int."""
+    ts_dtype = str(df["timestamp"].dtype)
+    if "datetime64" in ts_dtype:
+        unit = ts_dtype.replace("datetime64[", "").rstrip("]")
+        if unit == "s":
+            df["timestamp"] = df["timestamp"].astype("int64")
+        elif unit == "ns":
+            df["timestamp"] = df["timestamp"].astype("int64") // 10**9
+        else:
+            df["timestamp"] = df["timestamp"].astype("int64") // 10**9
+    elif df["timestamp"].dtype == "object":
+        df["timestamp"] = pd.to_datetime(df["timestamp"]).astype("int64") // 10**9
+    return df
+
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS ohlcv_bars (
     symbol      TEXT NOT NULL,

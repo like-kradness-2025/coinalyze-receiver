@@ -6,27 +6,26 @@ import sys
 
 from .config import Config
 from .receiver import Receiver
+from .selected20 import Selected20Fetcher, load_selected20, SELECTED20_PATH
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Coinalyze market data receiver — download and store market data locally."
     )
+    sub = parser.add_subparsers(dest="command", help="Sub-command")
+
+    # --- default (legacy) ---
     parser.add_argument(
-        "--symbols",
-        "-s",
+        "--symbols", "-s",
         help="Comma-separated symbols (default: $COINALYZE_SYMBOLS or BTCUSDT_PERP.A)",
     )
     parser.add_argument(
-        "--intervals",
-        "-i",
+        "--intervals", "-i",
         help="Comma-separated intervals (default: $COINALYZE_INTERVALS or 1hour)",
     )
     parser.add_argument(
-        "--days",
-        "-d",
-        type=int,
-        default=7,
+        "--days", "-d", type=int, default=7,
         help="Days back to fetch for initial sync (default: 7)",
     )
     parser.add_argument(
@@ -34,19 +33,15 @@ def main() -> None:
         help="SQLite DB path (default: $COINALYZE_DB_PATH or ./data/coinalyze.db)",
     )
     parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
+        "--verbose", "-v", action="store_true",
         help="Enable debug logging",
     )
     parser.add_argument(
-        "--list-markets",
-        action="store_true",
+        "--list-markets", action="store_true",
         help="List available markets from Coinalyze API and exit",
     )
     parser.add_argument(
-        "--list-exchanges",
-        action="store_true",
+        "--list-exchanges", action="store_true",
         help="List available exchanges from Coinalyze API and exit",
     )
     parser.add_argument(
@@ -54,15 +49,28 @@ def main() -> None:
         help="Search markets by keyword (e.g. BTC, ETH)",
     )
 
+    # --- selected20 subcommand ---
+    p20 = sub.add_parser("selected20", help="BTC Selected 20 — 1min OHLCV for 20 BTC markets")
+    p20.add_argument(
+        "--days", "-d", type=int, default=1,
+        help="Days back for initial sync (default: 1)",
+    )
+    p20.add_argument(
+        "--db",
+        help="SQLite DB path (default: ./data/coinalyze_1min.db)",
+    )
+    p20.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Enable debug logging",
+    )
+    p20.add_argument(
+        "--show", action="store_true",
+        help="List the 20 symbols and exit",
+    )
+
     args = parser.parse_args()
     config = Config.from_env()
 
-    if args.symbols:
-        config.symbols = [s.strip() for s in args.symbols.split(",")]
-    if args.intervals:
-        config.intervals = [i.strip() for i in args.intervals.split(",")]
-    if args.db:
-        config.db_path = args.db
     if args.verbose:
         config.log_level = "DEBUG"
 
@@ -71,6 +79,40 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    # --- selected20 subcommand ---
+    if args.command == "selected20":
+        if args.db:
+            config.db_path = args.db
+
+        if args.show:
+            entries = load_selected20()
+            print(f"{'Symbol':<25} {'Type':<8} {'Exchange':<12} {'Market':<50}")
+            print("-" * 100)
+            for e in entries:
+                mtype = "perp" if e.get("market_type") == "future" else "spot"
+                print(f"{e['symbol']:<25} {mtype:<8} {e['exchange_name']:<12} {e['market_name']:<50}")
+            print(f"\nTotal: {len(entries)} symbols")
+            return
+
+        fetcher = Selected20Fetcher(config)
+        print(f"DB: {fetcher.db_path}")
+        print(f"Symbols: {len(fetcher.all_symbols)} (spot={len(fetcher.spot_symbols)}, perp={len(fetcher.perp_symbols)})")
+        print(f"Lookback: {args.days} day(s)")
+        print()
+
+        results = fetcher.run_all(days_back=args.days)
+        print()
+        print(fetcher.summary(results))
+        return
+
+    # --- default (legacy) mode ---
+    if args.symbols:
+        config.symbols = [s.strip() for s in args.symbols.split(",")]
+    if args.intervals:
+        config.intervals = [i.strip() for i in args.intervals.split(",")]
+    if args.db:
+        config.db_path = args.db
 
     receiver = Receiver(config)
 
@@ -108,7 +150,6 @@ def main() -> None:
             print(f"\nTotal markets: {len(matches)}")
         return
 
-    # Validate config
     errors = config.validate()
     if errors:
         for e in errors:
