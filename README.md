@@ -14,14 +14,41 @@ Coinalyze API から仮想通貨デリバティブ市場データを受信し、
 
 ## セットアップ
 
+### 通常環境（Linux / macOS）
+
 ```bash
 # 環境変数
 cp .env.example .env
 # .env に COINALYZE_API_KEY を設定
 
-# インストール
+# インストール（pandas のビルドに少し時間がかかる場合あり）
 pip install -e .
 ```
+
+### Termux（Android）
+
+**重要:** `pip install` で pandas/numpy をソースビルドするとメモリ不足でクラッシュします。
+必ず Termux のプリコンパイル済みパッケージを使用してください。
+
+```bash
+# 1. セットアップスクリプトを実行（推奨）
+bash scripts/setup_termux.sh
+
+# または手動で:
+# pkg install tur-repo
+# pkg update
+# pkg install python-numpy python-pandas
+# pip install -e . --no-build-isolation
+
+# 2. API キー設定
+cp .env.example .env
+# .env に COINALYZE_API_KEY を設定
+```
+
+**なぜこれで軽いのか:**
+- numpy, pandas → `pkg install` でプリコンパイル済み .deb を導入（ビルド負荷ゼロ）
+- coinalyze, httpx, pyrate-limiter → 純Python（ビルド不要）
+- Termux環境で `pip install pandas` は絶対に実行しないでください
 
 ## 使い方
 
