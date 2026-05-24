@@ -121,6 +121,8 @@ python -m coinalyze_receiver.cli markets --query BTCUSDT
 - Receiver は取得・正規化・保存に集中する
 - 欠損やAPI失敗は health に残す
 - raw response を保存し、後から再正規化できるようにする
+- CLI の件数表示は `raw` / `fetched` / `persisted` を分けている
+- render は読み込み時にも `symbol + ts` で重複排除する
 
 ## Next phase
 

@@ -54,7 +54,7 @@ def test_fetch_once_persists_state_and_narrows_followup_window(monkeypatch, tmp_
     second = receiver.fetch_once(symbol="ETHUSDT_PERP.A", lookback="2m")
 
     assert first[0].normalized_count == 2
-    assert second[0].normalized_count == 4
+    assert second[0].normalized_count == 2
 
     first_call = dummy.calls[0]
     second_call = dummy.calls[1]
@@ -66,7 +66,8 @@ def test_fetch_once_persists_state_and_narrows_followup_window(monkeypatch, tmp_
     assert state["datasets"]["funding_rate"]["last_ts"] >= second_call[3]
 
     health = json.loads((cfg.runtime_dir / "health.json").read_text(encoding="utf-8"))
-    assert health["results"][0]["normalized_count"] == 4
+    assert health["results"][0]["fetched_count"] == 2
+    assert health["results"][0]["persisted_count"] == 4
 
 
 def test_fetch_once_deduplicates_same_timestamp_rows_and_updates_health(monkeypatch, tmp_path: Path):
@@ -84,7 +85,7 @@ def test_fetch_once_deduplicates_same_timestamp_rows_and_updates_health(monkeypa
     assert first[0].raw_count == 1
     assert first[0].normalized_count == 1
     assert second[0].raw_count == 1
-    assert second[0].normalized_count == 2
+    assert second[0].normalized_count == 1
 
     raw_lines = (cfg.output_dir / "raw" / "ohlcv.jsonl").read_text(encoding="utf-8").splitlines()
     normalized_lines = (cfg.output_dir / "normalized" / "ohlcv.jsonl").read_text(encoding="utf-8").splitlines()
@@ -93,7 +94,8 @@ def test_fetch_once_deduplicates_same_timestamp_rows_and_updates_health(monkeypa
     assert any('"close":99.0' in line for line in normalized_lines)
     health = json.loads((cfg.runtime_dir / "health.json").read_text(encoding="utf-8"))
     assert health["results"][0]["raw_count"] == 1
-    assert health["results"][0]["normalized_count"] == 2
+    assert health["results"][0]["fetched_count"] == 1
+    assert health["results"][0]["persisted_count"] == 2
     assert health["ok"] is True
 
 

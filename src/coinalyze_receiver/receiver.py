@@ -19,9 +19,14 @@ logger = logging.getLogger(__name__)
 class FetchResult:
     dataset: str
     raw_count: int
-    normalized_count: int
+    fetched_count: int
+    persisted_count: int
     ok: bool
     error: str | None = None
+
+    @property
+    def normalized_count(self) -> int:
+        return self.fetched_count
 
 
 class CoinalyzeReceiver:
@@ -92,12 +97,11 @@ class CoinalyzeReceiver:
             ("dataset", "symbol", "from", "to"),
         )
         raw_count = 1
-        before_count = len(read_jsonl(normalized_path)) if normalized_path.exists() else 0
         for row in normalized_rows:
             upsert_jsonl(normalized_path, row, ("dataset", "symbol", "ts"))
-        final_count = len(read_jsonl(normalized_path)) if normalized_path.exists() else before_count
-        normalized_count = before_count + len(normalized_rows)
-        return FetchResult(dataset=dataset, raw_count=raw_count, normalized_count=normalized_count, ok=True)
+        persisted_count = len(read_jsonl(normalized_path)) if normalized_path.exists() else 0
+        fetched_count = len(normalized_rows)
+        return FetchResult(dataset=dataset, raw_count=raw_count, fetched_count=fetched_count, persisted_count=persisted_count, ok=True)
 
     def fetch_once(self, symbol: str | None = None, lookback: str | None = None, from_ts: int | None = None, to_ts: int | None = None) -> list[FetchResult]:
         symbol = symbol or self.config.symbol
@@ -140,14 +144,14 @@ class CoinalyzeReceiver:
                 results.append(result)
                 normalized_path = self._paths(dataset)[1]
                 persisted_count = len(read_jsonl(normalized_path)) if normalized_path.exists() else 0
-                health_results.append(FetchResult(dataset=dataset, raw_count=result.raw_count, normalized_count=persisted_count, ok=result.ok, error=result.error))
+                health_results.append(FetchResult(dataset=dataset, raw_count=result.raw_count, fetched_count=result.fetched_count, persisted_count=persisted_count, ok=result.ok, error=result.error))
                 max_ts = max((int(row["ts"]) for row in rows if "ts" in row), default=None)
                 if max_ts is not None:
                     datasets_state = dict(next_state.get("datasets", {}))
                     datasets_state[dataset] = {"last_ts": max_ts, "updated_at": now_ts}
                     next_state["datasets"] = datasets_state
             except Exception as exc:
-                error_result = FetchResult(dataset=dataset, raw_count=0, normalized_count=0, ok=False, error=str(exc))
+                error_result = FetchResult(dataset=dataset, raw_count=0, fetched_count=0, persisted_count=0, ok=False, error=str(exc))
                 results.append(error_result)
                 health_results.append(error_result)
 

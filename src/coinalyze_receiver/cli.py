@@ -25,7 +25,9 @@ DEFAULT_RENDER_LAST_BARS = 96
 def _print_results(results) -> None:
     for r in results:
         status = "ok" if r.ok else "fail"
-        detail = f"raw={r.raw_count} normalized={r.normalized_count}"
+        fetched = getattr(r, "fetched_count", getattr(r, "normalized_count", 0))
+        persisted = getattr(r, "persisted_count", fetched)
+        detail = f"raw={r.raw_count} fetched={fetched} persisted={persisted}"
         if r.error:
             detail += f" error={r.error}"
         print(f"[{status}] {r.dataset}: {detail}")
@@ -58,6 +60,15 @@ def _resolve_render_window(args: argparse.Namespace) -> tuple[int | None, int | 
 
     to_ts = _parse_iso_ts(args.to) if args.to else None
     return from_ts, to_ts
+
+
+def _dedupe_ohlcv_rows(rows: list[dict]) -> list[dict]:
+    deduped: dict[tuple[str, int], dict] = {}
+    for row in rows:
+        symbol = str(row.get("symbol", ""))
+        ts = int(row["ts"])
+        deduped[(symbol, ts)] = row
+    return [deduped[key] for key in sorted(deduped.keys(), key=lambda item: item[1])]
 
 
 def cmd_markets(args: argparse.Namespace) -> int:
@@ -109,6 +120,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         for line in f:
             if line.strip():
                 rows.append(json.loads(line))
+    rows = _dedupe_ohlcv_rows(rows)
 
     from_ts, to_ts = _resolve_render_window(args)
     footprint = build_pseudo_footprint(

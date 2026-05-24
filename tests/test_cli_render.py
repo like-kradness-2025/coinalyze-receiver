@@ -115,5 +115,5 @@ def test_cmd_render_filters_duplicates_before_rendering(monkeypatch: pytest.Monk
     assert len(footprint) == 1
     levels = footprint[1699999200]
     assert len(levels) == 2
-    assert levels[0].buy_volume == pytest.approx(3.0)
-    assert levels[1].buy_volume == pytest.approx(3.0)
+    assert levels[0].buy_volume == pytest.approx(50.0)
+    assert levels[1].buy_volume == pytest.approx(50.0)
