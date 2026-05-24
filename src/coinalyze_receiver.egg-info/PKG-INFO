@@ -1,7 +1,0 @@
-Metadata-Version: 2.4
-Name: coinalyze-receiver
-Version: 0.1.0
-Summary: Coinalyze API data receiver — fetch and store market data locally
-Requires-Python: >=3.11
-Requires-Dist: coinalyze>=0.1.1
-Requires-Dist: pandas>=2.0
