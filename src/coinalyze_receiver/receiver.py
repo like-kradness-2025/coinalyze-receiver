@@ -1,7 +1,7 @@
 """Coinalyze data receiver — fetch and store market data."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from coinalyze import CoinalyzeClient, HistoryEndpoint, Interval
@@ -64,18 +64,18 @@ class Receiver:
         interval_enum = _interval_enum(interval)
 
         # Determine date range
-        end_dt = datetime.utcnow()
+        end_dt = datetime.now(timezone.utc)
         min_ts, max_ts = self.storage.get_existing_range(table, symbol)
 
         if max_ts is not None:
             # Incremental: fetch from last stored timestamp + 1 interval
             gap = _interval_timedelta(interval_enum)
-            start_dt = datetime.utcfromtimestamp(max_ts) + gap
+            start_dt = datetime.fromtimestamp(max_ts, tz=timezone.utc) + gap
             if start_dt >= end_dt:
                 logger.info(
                     "[%s] %s %s: data is current (last=%s)",
                     symbol, endpoint, interval,
-                    datetime.utcfromtimestamp(max_ts).isoformat(),
+                    datetime.fromtimestamp(max_ts, tz=timezone.utc).isoformat(),
                 )
                 return 0
         else:
