@@ -3,4 +3,7 @@ __pycache__/
 *.pyc
 data/
 .env
+.hermes/
+.pytest_cache/
+runtime/
 src/coinalyze_receiver.egg-info/

@@ -143,14 +143,3 @@ class Storage:
                     f"SELECT COUNT(*) FROM {table} WHERE symbol = ?", (symbol,)
                 ).fetchone()[0]
             return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-
-    def get_data(
-        self, table: str, symbol: str, limit: int = 100
-    ) -> list[dict]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                f"SELECT * FROM {table} WHERE symbol = ? ORDER BY timestamp DESC LIMIT ?",
-                (symbol, limit),
-            ).fetchall()
-            cols = [d[0] for d in conn.execute(f"PRAGMA table_info({table})").fetchall()]
-        return [dict(zip(cols, row)) for row in reversed(rows)]

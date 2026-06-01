@@ -1,25 +1,43 @@
-"""BTC Selected 20 fetcher — 1-minute OHLCV for all 20 symbols."""
+"""BTC Selected 20 fetcher — 1-minute OHLCV for the current 21-symbol map."""
 
 import json
 import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from coinalyze import CoinalyzeClient, HistoryEndpoint, Interval
 
 from .config import Config
-from .storage import Storage, ENDPOINT_TABLE_MAP, normalize_timestamps
+from .storage import Storage, normalize_timestamps
 
 logger = logging.getLogger(__name__)
 
 SELECTED20_PATH = Path.home() / ".hermes" / "data" / "coinalyze" / "coinalyze-btc-selected-20-symbol-market-map.json"
 DEFAULT_DB_DIR = Path.cwd() / "data"
+EXPECTED_SYMBOL_COUNT = 21
+
+
+def _close_client(client) -> None:
+    """Close a CoinalyzeClient or its underlying HTTP client if available."""
+    close = getattr(client, "close", None)
+    if callable(close):
+        close()
+        return
+
+    inner = getattr(client, "_client", None)
+    inner_close = getattr(inner, "close", None)
+    if callable(inner_close):
+        inner_close()
 
 
 def load_selected20(path: Optional[str] = None) -> list[dict]:
-    """Load the BTC Selected 20 symbol list from JSON."""
+    """Load the BTC Selected 20 symbol list from JSON.
+
+    The source file name is historical. The current BTC selected map contains
+    21 entries: 13 perpetual/future markets plus 8 spot markets.
+    """
     p = Path(path) if path else SELECTED20_PATH
     if not p.exists():
         raise FileNotFoundError(f"Selected20 file not found: {p}")
@@ -47,8 +65,10 @@ def load_selected20(path: Optional[str] = None) -> list[dict]:
         else:
             has_spot = True
 
-    if len(data) != 20:
-        raise ValueError(f"Selected20 must contain exactly 20 entries: {len(data)} in {p}")
+    if len(data) != EXPECTED_SYMBOL_COUNT:
+        raise ValueError(
+            f"Selected20 must contain exactly {EXPECTED_SYMBOL_COUNT} entries: {len(data)} in {p}"
+        )
     if len(set(symbols)) != len(symbols):
         raise ValueError(f"Selected20 contains duplicate symbols: {p}")
     if not has_spot or not has_perp:
@@ -71,26 +91,38 @@ def categorize_symbols(entries: list[dict]) -> tuple[list[str], list[str]]:
 
 
 class Selected20Fetcher:
-    """Fetches 1-minute OHLCV data for all BTC Selected 20 symbols."""
+    """Fetches 1-minute OHLCV data for the current BTC Selected 20 map."""
 
     def __init__(self, config: Config, db_name: str = "coinalyze_1min.db"):
         self.config = config
-        self.client = CoinalyzeClient(api_key=config.api_key)
+        self.client: Any = None
+        self.storage: Any = None
+        try:
+            self.client = CoinalyzeClient(api_key=config.api_key)
 
-        db_path = (config.db_path or "").strip()
-        db_dir = Path(db_path).parent if db_path else DEFAULT_DB_DIR
-        db_dir.mkdir(parents=True, exist_ok=True)
-        self.db_path = str(db_dir / db_name)
-        self.storage = Storage(self.db_path)
+            db_path = (config.db_path or "").strip()
+            db_dir = Path(db_path).parent if db_path else DEFAULT_DB_DIR
+            db_dir.mkdir(parents=True, exist_ok=True)
+            self.db_path = str(db_dir / db_name)
+            self.storage = Storage(self.db_path)
 
-        # Load symbol list
-        self.entries = load_selected20()
-        self.spot_symbols, self.perp_symbols = categorize_symbols(self.entries)
-        self.all_symbols = self.spot_symbols + self.perp_symbols
+            # Load symbol list
+            self.entries = load_selected20()
+            self.spot_symbols, self.perp_symbols = categorize_symbols(self.entries)
+            self.all_symbols = self.spot_symbols + self.perp_symbols
 
-        # Rate limiting: 40 calls/min → ~1.5s between calls
-        self._call_interval = 2.0  # seconds between API calls
-        self._last_call_time = 0.0
+            # Rate limiting: 40 calls/min → ~1.5s between calls
+            self._call_interval = 2.0  # seconds between API calls
+            self._last_call_time = 0.0
+        except Exception:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        if self.client is not None:
+            _close_client(self.client)
+            self.client = None
 
     def _rate_limited_call(self):
         """Ensure we don't exceed 40 calls/minute."""
@@ -117,16 +149,23 @@ class Selected20Fetcher:
                 if max_ts is not None:
                     inc_start = datetime.utcfromtimestamp(max_ts) + timedelta(minutes=1)
                     if inc_start >= end_dt:
-                        logger.info("[%s] ohlcv 1min: up-to-date (last=%s)", sym,
-                                    datetime.utcfromtimestamp(max_ts).isoformat())
+                        logger.info(
+                            "[%s] ohlcv 1min: up-to-date (last=%s)",
+                            sym,
+                            datetime.utcfromtimestamp(max_ts).isoformat(),
+                        )
                         results[sym] = 0
                         continue
                     fetch_start = inc_start
                 else:
                     fetch_start = start_dt
 
-                logger.info("[%s] Fetching ohlcv 1min [%s → %s]", sym,
-                            fetch_start.isoformat(), end_dt.isoformat())
+                logger.info(
+                    "[%s] Fetching ohlcv 1min [%s → %s]",
+                    sym,
+                    fetch_start.isoformat(),
+                    end_dt.isoformat(),
+                )
 
                 df = self.client.get_history_df(
                     endpoint=HistoryEndpoint.OHLCV,
@@ -165,10 +204,14 @@ class Selected20Fetcher:
         return results
 
     def run_all(self, days_back: int = 1) -> dict[str, int]:
-        """Fetch 1min OHLCV for all 20 symbols."""
+        """Fetch 1min OHLCV for all configured selected symbols."""
         logger.info("=== BTC Selected20 — 1min OHLCV fetch ===")
-        logger.info("Symbols: %d (spot=%d, perp=%d)", len(self.all_symbols),
-                     len(self.spot_symbols), len(self.perp_symbols))
+        logger.info(
+            "Symbols: %d (spot=%d, perp=%d)",
+            len(self.all_symbols),
+            len(self.spot_symbols),
+            len(self.perp_symbols),
+        )
         return self.fetch_ohlcv_1min(self.all_symbols, days_back)
 
     def summary(self, results: dict[str, int]) -> str:
@@ -190,7 +233,7 @@ class Selected20Fetcher:
         spot_hits = sum(results.get(s, 0) for s in self.spot_symbols if results.get(s, 0) > 0)
         perp_hits = sum(results.get(s, 0) for s in self.perp_symbols if results.get(s, 0) > 0)
 
-        lines.append(f"")
+        lines.append("")
         lines.append(f"Total: {total_new} new rows, {total_err} errors")
         lines.append(f"  Spots: {spot_hits} rows")
         lines.append(f"  Perps: {perp_hits} rows")

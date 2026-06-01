@@ -6,7 +6,7 @@ import sys
 
 from .config import Config
 from .receiver import Receiver
-from .selected20 import Selected20Fetcher, load_selected20, SELECTED20_PATH
+from .selected20 import Selected20Fetcher, load_selected20
 
 
 def main() -> None:
@@ -15,7 +15,7 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", help="Sub-command")
 
-    # --- default (legacy) ---
+    # --- default mode ---
     parser.add_argument(
         "--symbols", "-s",
         help="Comma-separated symbols (default: $COINALYZE_SYMBOLS or BTCUSDT_PERP.A)",
@@ -50,7 +50,7 @@ def main() -> None:
     )
 
     # --- selected20 subcommand ---
-    p20 = sub.add_parser("selected20", help="BTC Selected 20 — 1min OHLCV for 20 BTC markets")
+    p20 = sub.add_parser("selected20", help="BTC Selected 20 — 1min OHLCV for 21 BTC markets")
     p20.add_argument(
         "--days", "-d", type=int, default=1,
         help="Days back for initial sync (default: 1)",
@@ -65,7 +65,7 @@ def main() -> None:
     )
     p20.add_argument(
         "--show", action="store_true",
-        help="List the 20 symbols and exit",
+        help="List the 21 symbols and exit",
     )
 
     args = parser.parse_args()
@@ -95,18 +95,26 @@ def main() -> None:
             print(f"\nTotal: {len(entries)} symbols")
             return
 
-        fetcher = Selected20Fetcher(config)
-        print(f"DB: {fetcher.db_path}")
-        print(f"Symbols: {len(fetcher.all_symbols)} (spot={len(fetcher.spot_symbols)}, perp={len(fetcher.perp_symbols)})")
-        print(f"Lookback: {args.days} day(s)")
-        print()
+        fetcher = None
+        try:
+            fetcher = Selected20Fetcher(config)
+            print(f"DB: {fetcher.db_path}")
+            print(
+                f"Symbols: {len(fetcher.all_symbols)} "
+                f"(spot={len(fetcher.spot_symbols)}, perp={len(fetcher.perp_symbols)})"
+            )
+            print(f"Lookback: {args.days} day(s)")
+            print()
 
-        results = fetcher.run_all(days_back=args.days)
-        print()
-        print(fetcher.summary(results))
+            results = fetcher.run_all(days_back=args.days)
+            print()
+            print(fetcher.summary(results))
+        finally:
+            if fetcher is not None:
+                fetcher.close()
         return
 
-    # --- default (legacy) mode ---
+    # --- default mode ---
     if args.symbols:
         config.symbols = [s.strip() for s in args.symbols.split(",")]
     if args.intervals:
@@ -114,57 +122,62 @@ def main() -> None:
     if args.db:
         config.db_path = args.db
 
-    receiver = Receiver(config)
-
-    if args.list_exchanges:
-        exchanges = receiver.client.get_exchanges()
-        print(f"{'Exchange':<25} Code")
-        print("-" * 35)
-        for e in exchanges:
-            print(f"{e['name']:<25} {e['code']}")
-        return
-
-    if args.list_markets or args.search:
-        markets = receiver.client.get_future_markets()
-        keyword = args.search.upper() if args.search else None
-        matches = []
-        for m in markets:
-            sym = m.get("symbol", "")
-            ex = m.get("exchange", "")
-            base = m.get("base_asset", "")
-            if keyword and keyword not in sym and keyword not in base:
-                continue
-            matches.append(m)
-        print(f"{'Symbol':<30} {'Exchange':<10} {'Base':<10} {'Perp':<5} {'OHLCV':<5} {'LS':<5}")
-        print("-" * 80)
-        for m in matches[:50]:
-            print(
-                f"{m['symbol']:<30} {m['exchange']:<10} {m['base_asset']:<10} "
-                f"{'✓' if m.get('is_perpetual') else '':<5} "
-                f"{'✓' if m.get('has_ohlcv_data') else '':<5} "
-                f"{'✓' if m.get('has_long_short_ratio_data') else '':<5}"
-            )
-        if len(matches) > 50:
-            print(f"... and {len(matches) - 50} more (total: {len(matches)})")
-        elif not keyword:
-            print(f"\nTotal markets: {len(matches)}")
-        return
-
     errors = config.validate()
     if errors:
         for e in errors:
             print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"DB: {config.db_path}")
-    print(f"Symbols: {', '.join(config.symbols)}")
-    print(f"Intervals: {', '.join(config.intervals)}")
-    print(f"Lookback: {args.days} days")
-    print()
+    receiver = None
+    try:
+        active_receiver = Receiver(config)
+        receiver = active_receiver
 
-    results = receiver.run_all(days_back=args.days)
-    print()
-    print(receiver.summary(results))
+        if args.list_exchanges:
+            exchanges = active_receiver.client.get_exchanges()
+            print(f"{'Exchange':<25} Code")
+            print("-" * 35)
+            for e in exchanges:
+                print(f"{e['name']:<25} {e['code']}")
+            return
+
+        if args.list_markets or args.search:
+            markets = active_receiver.client.get_future_markets()
+            keyword = args.search.upper() if args.search else None
+            matches = []
+            for m in markets:
+                sym = m.get("symbol", "")
+                base = m.get("base_asset", "")
+                if keyword and keyword not in sym and keyword not in base:
+                    continue
+                matches.append(m)
+            print(f"{'Symbol':<30} {'Exchange':<10} {'Base':<10} {'Perp':<5} {'OHLCV':<5} {'LS':<5}")
+            print("-" * 80)
+            for m in matches[:50]:
+                print(
+                    f"{m['symbol']:<30} {m['exchange']:<10} {m['base_asset']:<10} "
+                    f"{'✓' if m.get('is_perpetual') else '':<5} "
+                    f"{'✓' if m.get('has_ohlcv_data') else '':<5} "
+                    f"{'✓' if m.get('has_long_short_ratio_data') else '':<5}"
+                )
+            if len(matches) > 50:
+                print(f"... and {len(matches) - 50} more (total: {len(matches)})")
+            elif not keyword:
+                print(f"\nTotal markets: {len(matches)}")
+            return
+
+        print(f"DB: {config.db_path}")
+        print(f"Symbols: {', '.join(config.symbols)}")
+        print(f"Intervals: {', '.join(config.intervals)}")
+        print(f"Lookback: {args.days} days")
+        print()
+
+        results = receiver.run_all(days_back=args.days)
+        print()
+        print(receiver.summary(results))
+    finally:
+        if receiver is not None:
+            receiver.close()
 
 
 if __name__ == "__main__":

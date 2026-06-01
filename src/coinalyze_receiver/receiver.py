@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any
 
 from coinalyze import CoinalyzeClient, HistoryEndpoint, Interval
 
@@ -19,6 +19,19 @@ ENDPOINT_MAP: dict[str, HistoryEndpoint] = {
     "funding-rate": HistoryEndpoint.FUNDING_RATE,
     "long-short-ratio": HistoryEndpoint.LSRATIO,
 }
+
+
+def _close_client(client) -> None:
+    """Close a CoinalyzeClient or its underlying HTTP client if available."""
+    close = getattr(client, "close", None)
+    if callable(close):
+        close()
+        return
+
+    inner = getattr(client, "_client", None)
+    inner_close = getattr(inner, "close", None)
+    if callable(inner_close):
+        inner_close()
 
 
 def _interval_enum(interval_str: str) -> Interval:
@@ -44,8 +57,20 @@ class Receiver:
 
     def __init__(self, config: Config):
         self.config = config
-        self.client = CoinalyzeClient(api_key=config.api_key)
-        self.storage = Storage(config.db_path)
+        self.client: Any = None
+        self.storage: Any = None
+        try:
+            self.client = CoinalyzeClient(api_key=config.api_key)
+            self.storage = Storage(config.db_path)
+        except Exception:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        if self.client is not None:
+            _close_client(self.client)
+            self.client = None
 
     def fetch_and_store(
         self,
@@ -160,5 +185,3 @@ def _interval_timedelta(interval: Interval) -> timedelta:
         Interval.D1: timedelta(days=1),
     }
     return mapping[interval]
-
-

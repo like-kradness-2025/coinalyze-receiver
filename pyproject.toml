@@ -5,6 +5,7 @@ description = "Coinalyze API data receiver — fetch and store market data local
 requires-python = ">=3.11"
 dependencies = [
     "coinalyze>=0.1.1",
+    "httpx>=0.27",
     "pandas>=2.0",
 ]
 
@@ -13,3 +14,8 @@ coinalyze-receiver = "coinalyze_receiver.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+    "live: tests that call external live APIs",
+]
