@@ -51,6 +51,12 @@ ENDPOINT_CONFIGS: list[tuple[str, str, str]] = [
 _PERP_ONLY_ENDPOINTS = {"open-interest", "funding-rate", "liquidation", "long-short-ratio"}
 
 # ---------------------------------------------------------------------------
+# Lookback / backfill defaults
+# ---------------------------------------------------------------------------
+LOOKBACK_DAYS_DEFAULT = 7
+LOOKBACK_SECONDS_DEFAULT = LOOKBACK_DAYS_DEFAULT * 86400
+
+# ---------------------------------------------------------------------------
 # Response field → DataFrame column mapping per endpoint
 # ---------------------------------------------------------------------------
 _FIELD_MAPS: dict[str, dict[str, str]] = {
@@ -216,41 +222,30 @@ class Fetcher:
     # Single fetch
     # ------------------------------------------------------------------
 
-    def fetch_one(
+    def _fetch_range(
         self,
         endpoint: str,
         symbol: str,
-        from_ts: int,
-        to_ts: int,
+        fetch_from: int,
+        fetch_to: int,
         interval: str,
         table: str,
     ) -> tuple[int, str]:
-        """Fetch one symbol/endpoint pair and store results.
+        """Fetch a specific time range and store it.
 
         Returns:
-            ``(result_code, detail_string)`` where *result_code* is one of
-            ``OK`` (>=0, actual number of new rows stored), ``ERROR`` (-1),
-            or ``NODATA`` (-2).  The detail string is a human-readable
-            description.
+            ``(result_code, detail_string)`` — see :meth:`fetch_one`.
         """
-        # -- Incremental: determine the effective fetch start --------------
         assert self.storage is not None, "Fetcher not properly initialised"
         assert self.client is not None, "Fetcher not properly initialised"
-        existing = self.storage.get_existing_range(table, symbol)
-        last_ts = existing[1]  # max(timestamp)
 
-        if last_ts is not None:
-            fetch_from = max(from_ts, last_ts + 60)
-        else:
-            fetch_from = from_ts
-
-        if fetch_from >= to_ts:
+        if fetch_from >= fetch_to:
             return (OK, "up-to-date")
 
         # -- Make the API call ---------------------------------------------
         try:
             response = self.client.get_history(
-                endpoint, symbol, fetch_from, to_ts, interval
+                endpoint, symbol, fetch_from, fetch_to, interval
             )
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
@@ -271,7 +266,7 @@ class Fetcher:
 
         # -- Empty response -------------------------------------------------
         if not response or not isinstance(response, list) or len(response) == 0:
-            logger.debug("No data for %s/%s (%d – %d)", symbol, endpoint, fetch_from, to_ts)
+            logger.debug("No data for %s/%s (%d – %d)", symbol, endpoint, fetch_from, fetch_to)
             return (NODATA, "no data")
 
         # -- Map response to DataFrame --------------------------------------
@@ -316,11 +311,88 @@ class Fetcher:
 
         return (inserted, f"{inserted} new rows")
 
+    def fetch_one(
+        self,
+        endpoint: str,
+        symbol: str,
+        from_ts: int,
+        to_ts: int,
+        interval: str,
+        table: str,
+        lookback_seconds: int = 0,
+    ) -> tuple[int, str]:
+        """Fetch one symbol/endpoint pair and store results.
+
+        When *lookback_seconds* is > 0 the method will also perform a
+        one-time backfill / gap-fill if the database is empty or has a
+        gap before the earliest stored timestamp.
+
+        Returns:
+            ``(result_code, detail_string)`` where *result_code* is one of
+            ``OK`` (>=0, actual number of new rows stored), ``ERROR`` (-1),
+            or ``NODATA`` (-2).  The detail string is a human-readable
+            description.
+        """
+        assert self.storage is not None, "Fetcher not properly initialised"
+
+        min_ts, max_ts = self.storage.get_existing_range(table, symbol)
+        total_inserted = 0
+
+        # ------------------------------------------------------------------
+        # Phase 1 — Backfill / gap filling
+        # ------------------------------------------------------------------
+        if lookback_seconds > 0 and min_ts is not None:
+            backfill_target = to_ts - lookback_seconds
+            if min_ts > backfill_target:
+                backfill_from = backfill_target
+                backfill_to = min_ts - 60
+                if backfill_from < backfill_to:
+                    logger.info(
+                        "Backfill %s/%s: [%s → %s] (%ds window)",
+                        symbol, endpoint, backfill_from, backfill_to,
+                        lookback_seconds,
+                    )
+                    code, detail = self._fetch_range(
+                        endpoint, symbol, backfill_from, backfill_to,
+                        interval, table,
+                    )
+                    if code < 0:
+                        return (code, detail)
+                    total_inserted += code
+
+        # ------------------------------------------------------------------
+        # Determine fetch start for the main (incremental) fetch
+        # ------------------------------------------------------------------
+        if lookback_seconds > 0 and min_ts is None:
+            # Empty DB — use lookback window (no from_ts clamp)
+            fetch_from = to_ts - lookback_seconds
+        elif max_ts is not None:
+            # Normal incremental
+            fetch_from = max(from_ts, max_ts + 60)
+        else:
+            fetch_from = from_ts
+
+        if fetch_from >= to_ts:
+            if total_inserted > 0:
+                return (total_inserted, f"{total_inserted} new rows")
+            return (OK, "up-to-date")
+
+        # ------------------------------------------------------------------
+        # Phase 2 — Main (incremental) fetch
+        # ------------------------------------------------------------------
+        code, detail = self._fetch_range(
+            endpoint, symbol, fetch_from, to_ts, interval, table,
+        )
+        if code < 0:
+            return (code, detail)
+        total_inserted += code
+        return (total_inserted, f"{total_inserted} new rows")
+
     # ------------------------------------------------------------------
     # Full cycle
     # ------------------------------------------------------------------
 
-    def fetch_cycle(self) -> dict[str, dict[str, tuple[int, str]]]:
+    def fetch_cycle(self, lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT) -> dict[str, dict[str, tuple[int, str]]]:
         """Run one complete fetch cycle over all symbols × data types.
 
         Returns:
@@ -347,6 +419,7 @@ class Fetcher:
             for symbol in symbols:
                 code, detail = self.fetch_one(
                     endpoint, symbol, common_from, to, interval, table,
+                    lookback_seconds=lookback_seconds,
                 )
                 results.setdefault(symbol, {})[endpoint] = (code, detail)
 

@@ -15,6 +15,8 @@ from coinalyze_receiver.fetcher import (
     OK,
     FatalError,
     Fetcher,
+    LOOKBACK_DAYS_DEFAULT,
+    LOOKBACK_SECONDS_DEFAULT,
     SYMBOL_MAP_PATH,
     load_symbols,
 )
@@ -52,14 +54,14 @@ def setup_logging(verbose: bool, default_level: int = logging.INFO) -> None:
 # Subcommands
 # ---------------------------------------------------------------------------
 
-def cmd_fetch(config: Config, verbose: bool) -> None:
+def cmd_fetch(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT) -> None:
     """Run one fetch cycle and print the summary."""
     setup_logging(verbose, logging.INFO)
 
     fetcher = None
     try:
         fetcher = Fetcher(config)
-        results = fetcher.fetch_cycle()
+        results = fetcher.fetch_cycle(lookback_seconds=lookback_seconds)
         print(fetcher.format_summary(results, fetcher.spot_symbols, fetcher.perp_symbols))
 
         # Exit 0 if no errors, 1 if any ERROR sentinel
@@ -78,7 +80,7 @@ def cmd_fetch(config: Config, verbose: bool) -> None:
             fetcher.close()
 
 
-def cmd_loop(config: Config, verbose: bool) -> None:
+def cmd_loop(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT) -> None:
     """Run an infinite 3-minute fetch loop with graceful shutdown."""
     setup_logging(verbose, logging.INFO)
 
@@ -104,7 +106,7 @@ def cmd_loop(config: Config, verbose: bool) -> None:
         fetcher = None
         try:
             fetcher = Fetcher(config)
-            results = fetcher.fetch_cycle()
+            results = fetcher.fetch_cycle(lookback_seconds=lookback_seconds)
             print(fetcher.format_summary(results, fetcher.spot_symbols, fetcher.perp_symbols))
         except FatalError as e:
             print(f"FATAL: {e}", file=sys.stderr)
@@ -257,10 +259,14 @@ def main() -> None:
     # fetch
     p_fetch = sub.add_parser("fetch", help="Run one fetch cycle")
     p_fetch.add_argument("-v", "--verbose", action="store_true")
+    p_fetch.add_argument("--lookback", "-L", type=int, default=LOOKBACK_DAYS_DEFAULT,
+                        help="Days of lookback for empty DB / gap filling (default: %(default)s)")
 
     # loop
     p_loop = sub.add_parser("loop", help="Run infinite 3-minute fetch loop")
     p_loop.add_argument("-v", "--verbose", action="store_true")
+    p_loop.add_argument("--lookback", "-L", type=int, default=LOOKBACK_DAYS_DEFAULT,
+                        help="Days of lookback for empty DB / gap filling (default: %(default)s)")
 
     # show
     p_show = sub.add_parser("show", help="Show symbol map")
@@ -289,9 +295,9 @@ def main() -> None:
 
     # Dispatch
     if args.command == "fetch":
-        cmd_fetch(config, args.verbose)
+        cmd_fetch(config, args.verbose, lookback_seconds=args.lookback * 86400)
     elif args.command == "loop":
-        cmd_loop(config, args.verbose)
+        cmd_loop(config, args.verbose, lookback_seconds=args.lookback * 86400)
     elif args.command == "show":
         cmd_show(config, args.verbose)
     elif args.command == "list-markets":
