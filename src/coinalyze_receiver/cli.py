@@ -17,6 +17,7 @@ from coinalyze_receiver.fetcher import (
     Fetcher,
     LOOKBACK_DAYS_DEFAULT,
     LOOKBACK_SECONDS_DEFAULT,
+    RETENTION_DAYS_DEFAULT,
     SYMBOL_MAP_PATH,
     load_symbols,
 )
@@ -54,14 +55,14 @@ def setup_logging(verbose: bool, default_level: int = logging.INFO) -> None:
 # Subcommands
 # ---------------------------------------------------------------------------
 
-def cmd_fetch(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT) -> None:
+def cmd_fetch(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT, retention_days: int = RETENTION_DAYS_DEFAULT) -> None:
     """Run one fetch cycle and print the summary."""
     setup_logging(verbose, logging.INFO)
 
     fetcher = None
     try:
         fetcher = Fetcher(config)
-        results = fetcher.fetch_cycle(lookback_seconds=lookback_seconds)
+        results = fetcher.fetch_cycle(lookback_seconds=lookback_seconds, retention_days=retention_days)
         print(fetcher.format_summary(results, fetcher.spot_symbols, fetcher.perp_symbols))
 
         # Exit 0 if no errors, 1 if any ERROR sentinel
@@ -83,7 +84,7 @@ def cmd_fetch(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SE
             fetcher.close()
 
 
-def cmd_loop(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT) -> None:
+def cmd_loop(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT, retention_days: int = RETENTION_DAYS_DEFAULT) -> None:
     """Run an infinite 3-minute fetch loop with graceful shutdown."""
     setup_logging(verbose, logging.INFO)
 
@@ -109,7 +110,7 @@ def cmd_loop(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SEC
         fetcher = None
         try:
             fetcher = Fetcher(config)
-            results = fetcher.fetch_cycle(lookback_seconds=lookback_seconds)
+            results = fetcher.fetch_cycle(lookback_seconds=lookback_seconds, retention_days=retention_days)
             print(fetcher.format_summary(results, fetcher.spot_symbols, fetcher.perp_symbols))
         except FatalError as e:
             print(f"FATAL: {e}", file=sys.stderr)
@@ -267,12 +268,16 @@ def main() -> None:
     p_fetch.add_argument("-v", "--verbose", action="store_true")
     p_fetch.add_argument("--lookback", "-L", type=int, default=LOOKBACK_DAYS_DEFAULT,
                         help="Days of lookback for empty DB / gap filling (default: %(default)s)")
+    p_fetch.add_argument("--retention", "-R", type=int, default=RETENTION_DAYS_DEFAULT,
+                        help="Days of data retention before auto-prune (default: %(default)s)")
 
     # loop
     p_loop = sub.add_parser("loop", help="Run infinite 3-minute fetch loop")
     p_loop.add_argument("-v", "--verbose", action="store_true")
     p_loop.add_argument("--lookback", "-L", type=int, default=LOOKBACK_DAYS_DEFAULT,
                         help="Days of lookback for empty DB / gap filling (default: %(default)s)")
+    p_loop.add_argument("--retention", "-R", type=int, default=RETENTION_DAYS_DEFAULT,
+                        help="Days of data retention before auto-prune (default: %(default)s)")
 
     # show
     p_show = sub.add_parser("show", help="Show symbol map")
@@ -301,9 +306,9 @@ def main() -> None:
 
     # Dispatch
     if args.command == "fetch":
-        cmd_fetch(config, args.verbose, lookback_seconds=args.lookback * 86400)
+        cmd_fetch(config, args.verbose, lookback_seconds=args.lookback * 86400, retention_days=args.retention)
     elif args.command == "loop":
-        cmd_loop(config, args.verbose, lookback_seconds=args.lookback * 86400)
+        cmd_loop(config, args.verbose, lookback_seconds=args.lookback * 86400, retention_days=args.retention)
     elif args.command == "show":
         cmd_show(config, args.verbose)
     elif args.command == "list-markets":

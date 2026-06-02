@@ -57,6 +57,11 @@ LOOKBACK_DAYS_DEFAULT = 7
 LOOKBACK_SECONDS_DEFAULT = LOOKBACK_DAYS_DEFAULT * 86400
 
 # ---------------------------------------------------------------------------
+# Data retention / auto-pruning
+# ---------------------------------------------------------------------------
+RETENTION_DAYS_DEFAULT = 365
+
+# ---------------------------------------------------------------------------
 # Response field → DataFrame column mapping per endpoint
 # ---------------------------------------------------------------------------
 _FIELD_MAPS: dict[str, dict[str, str]] = {
@@ -392,8 +397,14 @@ class Fetcher:
     # Full cycle
     # ------------------------------------------------------------------
 
-    def fetch_cycle(self, lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT) -> dict[str, dict[str, tuple[int, str]]]:
+    def fetch_cycle(
+        self,
+        lookback_seconds: int = LOOKBACK_SECONDS_DEFAULT,
+        retention_days: int = RETENTION_DAYS_DEFAULT,
+    ) -> dict[str, dict[str, tuple[int, str]]]:
         """Run one complete fetch cycle over all symbols × data types.
+
+        After fetching, old data is pruned according to *retention_days*.
 
         Returns:
             ``{symbol: {endpoint_name: (result_code, detail_string)}}``
@@ -423,7 +434,23 @@ class Fetcher:
                 )
                 results.setdefault(symbol, {})[endpoint] = (code, detail)
 
+        # Prune old data (after all fetches)
+        pruned = self.prune_old_data(retention_days)
+        for table, n in pruned.items():
+            logger.info(
+                "Pruned %s: %s rows older than %dd", table, n, retention_days
+            )
+
         return results
+
+    def prune_old_data(self, retention_days: int = RETENTION_DAYS_DEFAULT) -> dict[str, int]:
+        """Delete data older than *retention_days* from all market tables.
+
+        Returns:
+            ``{table_name: rows_deleted}`` — only tables with deletions.
+        """
+        assert self.storage is not None, "Fetcher not properly initialised"
+        return self.storage.prune_old_data(retention_days)
 
     # ------------------------------------------------------------------
     # Summary formatting

@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+import time
+
 import pandas as pd
 
 
@@ -144,3 +146,28 @@ class Storage:
                     f"SELECT COUNT(*) FROM {table} WHERE symbol = ?", (symbol,)
                 ).fetchone()[0]
             return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+    def prune_old_data(self, retention_days: int = 365) -> dict[str, int]:
+        """Delete rows older than retention_days from all market tables.
+
+        Returns:
+            ``{table_name: rows_deleted}`` — only tables with deletions.
+        """
+        cutoff = int(time.time()) - retention_days * 86400
+        results: dict[str, int] = {}
+        tables = [
+            "ohlcv_bars",
+            "open_interest",
+            "funding_rates",
+            "liquidations",
+            "ls_ratios",
+        ]
+        with self._conn() as conn:
+            for table in tables:
+                deleted = conn.execute(
+                    f"DELETE FROM {table} WHERE timestamp < ?", (cutoff,)
+                ).rowcount
+                if deleted > 0:
+                    results[table] = deleted
+            conn.commit()
+        return results
