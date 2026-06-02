@@ -101,6 +101,7 @@ class Storage:
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")  # wait up to 5s on lock contention
         return conn
 
     def get_existing_range(

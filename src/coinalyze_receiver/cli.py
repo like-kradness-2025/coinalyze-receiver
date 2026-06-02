@@ -75,6 +75,9 @@ def cmd_fetch(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SE
     except FatalError as e:
         print(f"FATAL: {e}", file=sys.stderr)
         sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
     finally:
         if fetcher is not None:
             fetcher.close()
@@ -110,6 +113,9 @@ def cmd_loop(config: Config, verbose: bool, lookback_seconds: int = LOOKBACK_SEC
             print(fetcher.format_summary(results, fetcher.spot_symbols, fetcher.perp_symbols))
         except FatalError as e:
             print(f"FATAL: {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(1)
         finally:
             if fetcher is not None:
